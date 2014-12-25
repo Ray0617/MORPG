@@ -18,7 +18,7 @@ const bool DEBUG = true;
 
 const int DELAY = 50;
 const int WAIT_DELAY = 200;
-const int WALK_DELAY = 250;
+const int WALK_DELAY = 200;
 const int ACTION_DELAY = 2100;
 
 // client DC: (0, 23) - (1600, 922) (1600, 983(partial black))
@@ -64,10 +64,11 @@ typedef bool (*ColorCriteriaFunc)(COLORREF clr);
 bool Black(COLORREF clr);
 
 // function prototype
-void GetPosition(int& x, int& y);
-void GetInventorySpace(int& s1, int& s2);
-void Resize(vector<vector<bool> >& vec, int row, int col);
+void CheckAntiBot();
 void GetArray(vector<vector<bool> >& vec, HDC dc, int x, int y, int w, int h, ColorCriteriaFunc func);
+void GetInventorySpace(int& s1, int& s2);
+void GetPosition(int& x, int& y);
+void Resize(vector<vector<bool> >& vec, int row, int col);
 
 
 HWND g_hWnd = 0;
@@ -133,23 +134,28 @@ void WalkUp(int step = 1){ Walk('W', step); }
 void WalkTo(int x, int y)
 {
 	int x_now, y_now;
-	int x_last = x, y_last = y;
-	int fail = 0;
+	int x_last = -1, y_last = -1;
+	clock_t start = clock();
 	do
 	{
+		CheckAntiBot();
 		GetPosition(x_now, y_now);
 		if (x_now == x_last && y_now == y_last)
 		{
-			fail++;
-			if (fail > 3)
+			if (clock() - start > 8000)
 			{
 				MessageBoxA(0, "Can not find a shortest path to the destination", "Warning", MB_OK|MB_TOPMOST);
 				return;
 			}
+			else
+			{
+				Sleep(WAIT_DELAY);
+				continue;
+			}
 		}
 		else
 		{
-			fail = 0;
+			start = clock();
 			cout << "WalkTo (" << x_now << ", " << y_now << ")" << endl;
 		}
 		if (x > x_now)
@@ -182,6 +188,20 @@ bool InventoryZero(void*)
 	int s1, s2;
 	GetInventorySpace(s1, s2);
 	return s1 == 0;
+}
+bool PetInventoryEqual(void* arg)
+{
+	int num = (int)arg;
+	int s1, s2;
+	GetInventorySpace(s1, s2);
+	return s2 == num;
+}
+bool InventoryEqual(void* arg)
+{
+	int num = (int)arg;
+	int s1, s2;
+	GetInventorySpace(s1, s2);
+	return s1 == num;
 }
 bool InventoryGreater(void* arg)
 {
@@ -227,8 +247,8 @@ bool Wait(CriteriaFunc func, void* arg = 0, int timeout = -1)
 }
 
 void LoadToPet(){ Key('E'); Sleep(16 * DELAY); }
-void UnloadFromPet(){ Key('T'); Sleep(16 * DELAY); }
-void PutToChest(){ Key('Q'); Wait(InventoryGreater, (void*)30, 1000); }
+void UnloadFromPet(){ Key('T'); Wait(PetInventoryEqual, (void*)16, 1000); }
+void PutToChest(){ Key('Q'); Wait(InventoryEqual, (void*)37, 1000); }
 void GetFromChest(){ Key('G'); Wait(InventoryZero, NULL, 1000); }
 void OpenInventory(){ if (!InventoryShow(NULL)){ Key('B'); Wait(InventoryShow, NULL, 1000); } }
 void CloseInventory(){ if (InventoryShow(NULL)) { Key('B'); Wait(InventoryHide, NULL, 1000); } }
@@ -507,11 +527,13 @@ void GetNumberPair(const vector<vector<bool> >& vec, int& n1, int& n2)
 			break;
 		Copy(copy, num_x[i], num_y1, digit);
 		num[i] = GetDigit(digit);
+		//Debug(digit);
 		if (num[i] == 1)
 			num_x[i] -= 2;	// the number 1 bitmap starts at x = 2
 		else if (num[i] == 8)
 			num_x[i] -= 1;	// the number 8 bitmap starts at x = 1
 		Clear(copy, num_x[i], num_y1, num_w, num_h);
+		//Debug(copy);
 	}
 	if (num_x[3] > 0)
 	{
@@ -714,13 +736,36 @@ void SelectInventory(int row, int col)
 	CloseInventory();
 }
 
-bool CheckAntiBot()
+bool AntiBot()
 {
 	UpdateWindowSize();
 	HDC dc = GetDC(g_hWnd);
 	COLORREF clr = GetPixel(dc, g_nWidth / 2, g_nHeight / 2 + 120);
 	ReleaseDC(g_hWnd, dc);
 	return clr == 0x333333;
+}
+void CheckAntiBot()
+{
+	if (AntiBot())
+	{
+		MessageBoxA(0, "Antibot Dialog Detect!", "Warning", MB_OK|MB_TOPMOST);
+	}
+}
+
+void WaitCutting()
+{
+	cout << "Count Down...\n";
+	while (true)
+	{
+		Sleep(2 * ACTION_DELAY);	//might fail
+		CheckAntiBot();
+		int s1, s2;
+		GetInventorySpace(s1, s2);
+		cout << "\r" << s1 << "/" << s2 << "\t";
+		if (s1 == 0)
+			break;
+	}
+	cout << "...Complete Cutting\n";
 }
 
 void WaitCooking()
@@ -730,36 +775,82 @@ void WaitCooking()
 	for (int i = 0; i < COUNT; i++)
 	{
 		Sleep(ACTION_DELAY);
-		cout << "\r" << COUNT - i << "\t";
-		if (CheckAntiBot())
-		{
-			MessageBoxA(0, "Antibot Dialog Detect!", "Warning", MB_OK|MB_TOPMOST);
-			Sleep(ACTION_DELAY);
-		}
+		cout << "\r" << COUNT - i - 1 << "\t";
+		CheckAntiBot();
 	}
 	cout << "...Complete Cooking (Left some food not cooked intentionally so that no need to use mouse to equip)\n";
 }
 
 void WaitInventoryFull(){}
-void CutFir()
+void CutFirAtDorpatOutpost()
 {
 	// Dorpat
-	// from Chest (22, 18) to Fir (24, 27)
-	WalkToRelative(2, 9, 6);	// x: +3-3
-	WaitInventoryFull();
+	// stand at Dorpat (83, 37), Fir Tree at (88, 32), Chest at (83, 38), Corner (83, 32)
+	// preparation: 
+	// 1. equip the woodcutter's axe 
+	cout << "Try to Cut Fir automatically...\n";
+	cout << "Please equip the woodcutter's axe beforehand\n";
 
-	LoadToPet();
-	WalkUp();	//continue to cut
-	WaitInventoryFull();
+	int x, y;
+	GetPosition(x, y);
+	cout << "Position at (" << x << ", " << y << ")\n";
+	if (x != 83 || y != 37)
+	{
+		MessageBoxA(0, "Suggest initial location at Dorpat (83, 37)", "Warning", MB_OK|MB_TOPMOST);
+	}
+	int s1, s2;
+	GetInventorySpace(s1, s2);
+	cout << "Inventory Space is " << s1 << " / " << s2 << "\n";
 
-	// from Fir (24, 26) to Chest (22, 17)
-	WalkToRelative(-2, -9, 6);	// x: -3+3
-	PutToChest();
-	UnloadFromPet();
-	PutToChest();
+	while (true)
+	{
+		// try to access to chest and get raw food out
+		cout << "WalkTo Chest...";
+		WalkTo(83, 32);
+		WalkTo(83, 37);
+		cout << "Done\n";
+
+		cout << "Open Chest...";
+		WalkUp();	// open chest
+		cout << "Done\n";
+
+		cout << "PutToChest...";
+		PutToChest();
+		cout << "Done\n";
+
+		cout << "UnloadFromPet...";
+		UnloadFromPet();
+		cout << "Done\n";
+
+		cout << "PutToChest again...";
+		PutToChest();
+		cout << "Done\n";
+
+		cout << "WalkTo Corner...";
+		WalkTo(83, 32);
+		cout << "Done\n";
+
+		cout << "WalkTo Fir Tree...";
+		WalkTo(87, 32);
+		cout << "Done\n";
+
+		cout << "Cutting...";
+		WalkRight();	// access Fir Tree
+		WaitCutting();
+		cout << "Done\n";
+
+		cout << "LoadToPet...";
+		LoadToPet();
+		cout << "Done\n";
+
+		cout << "Cutting again...";
+		WalkRight();	// access Fir Tree
+		WaitCutting();
+		cout << "Done\n";
+	}
 }
 
-void Cook()
+void CookAtDorpat()
 {
 	// stand at Dorpat (21, 17), campfir at (17, 18), Chest at (22, 18)
 	// preparation: 
@@ -825,7 +916,9 @@ int main()
 	EnumChildWindows(hWndParent, FindMORPGWindowHandle, 0);
 	if (g_hWnd == 0)
 		return 0;
-	Cook();
+//	CookAtDorpat();	// must equip the raw food and select the raw food in the chest
+	CutFirAtDorpatOutpost();	// must equip axe
+
 	system("pause");
 	return 0;
 }
