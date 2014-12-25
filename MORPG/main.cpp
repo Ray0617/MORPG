@@ -64,7 +64,7 @@ typedef bool (*ColorCriteriaFunc)(COLORREF clr);
 bool Black(COLORREF clr);
 
 // function prototype
-void CheckAntiBot();
+bool CheckAntiBot();
 void GetArray(vector<vector<bool> >& vec, HDC dc, int x, int y, int w, int h, ColorCriteriaFunc func);
 void GetInventorySpace(int& s1, int& s2);
 void GetPosition(int& x, int& y);
@@ -144,8 +144,9 @@ void WalkTo(int x, int y)
 		{
 			if (clock() - start > 15000)
 			{
-				MessageBoxA(0, "Can not find a shortest path to the destination", "Warning", MB_OK|MB_TOPMOST);
-				return;
+				UINT id = MessageBoxA(0, "Not moved for 15 secs...", "Warning", MB_OK|MB_TOPMOST);
+				start = clock();
+				continue;
 			}
 			else
 			{
@@ -278,10 +279,15 @@ bool Wait(CriteriaFunc func, void* arg = 0, int timeout = -1)
 
 void LoadToPet(){ Key('E'); Sleep(16 * DELAY); }
 void UnloadFromPet(){ Key('T'); Wait(PetInventoryEqual, (void*)16, 4000); }
-void PutToChest(){ Key('Q'); Wait(InventoryRange, (void*)(36 * 100 + 37), 1000); }
-void GetFromChest(){ Key('G'); Wait(InventoryZero, NULL, 1000); }
+void PutToChest(){ Key('Q'); Wait(InventoryRange, (void*)(36 * 100 + 37), 4000); }
+void GetFromChest(){ Key('G'); Wait(InventoryZero, NULL, 4000); }
 void OpenInventory(){ if (!InventoryShow(NULL)){ Key('B'); Wait(InventoryShow, NULL, 1000); } }
 void CloseInventory(){ if (InventoryShow(NULL)) { Key('B'); Wait(InventoryHide, NULL, 1000); } }
+
+bool Valid(const vector<vector<bool> >& vec, int row, int col)
+{
+	return (row < (int)vec.size() && !vec.empty() && col < (int)vec[row].size());
+}
 
 void Debug(const vector<vector<bool> >& vec)
 {
@@ -522,7 +528,10 @@ void Copy(const vector<vector<bool> >& src, int x, int y, vector<vector<bool> >&
 	{
 		for (int j = 0; j < h; j++)
 		{
-			dst[j][i] = src[y+j][x+i];
+			int row = y+j;
+			int col = x+i;
+			if (Valid(src, row, col))
+				dst[j][i] = src[row][col];
 		}
 	}
 }
@@ -774,17 +783,21 @@ bool AntiBot()
 	ReleaseDC(g_hWnd, dc);
 	return clr == 0x333333;
 }
-void CheckAntiBot()
+bool CheckAntiBot()
 {
 	if (AntiBot())
 	{
 		MessageBoxA(0, "Antibot Dialog Detect!", "Warning", MB_OK|MB_TOPMOST);
+		return true;
 	}
+	return false;
 }
 
 void WaitActing(const string& act)
 {
 	cout << "Count Down...\n";
+	int s1_last = -1, s2_last = -1;
+	clock_t start = clock();
 	while (true)
 	{
 		int s1, s2;
@@ -793,7 +806,21 @@ void WaitActing(const string& act)
 		if (s1 == 0)
 			break;
 		Sleep(2 * ACTION_DELAY);	//might fail
-		CheckAntiBot();
+		if (CheckAntiBot())
+			s1_last--;
+		if (s1_last == s1)
+		{
+			if (clock() - start > 30000)
+			{
+				MessageBoxA(0, "Get nothing for 30 secs", "Warning", MB_OK|MB_TOPMOST);
+				start = clock();
+			}
+		}
+		else
+		{
+			start = clock();
+			s1_last = s1;
+		}
 	}
 	cout << "...Complete " << act << endl;
 }
@@ -939,19 +966,23 @@ void MineGoldAtReval()
 {
 	const int chest_side_x = 15;
 	const int chest_side_y = 32;
+	const int resource_side_x = 46;
+	const int resource_side_y = 56;
 	
 	// preparation: 
 	// 1. equip jewelry permission guide and iron pickaxe
-	cout << "Try to Mine Gold automatically...\n";
-	cout << "Please equip jewelry permission guide and iron pickaxe beforehand\n";
+	MessageBoxA(0, "Try to Mine Gold automatically...\n"
+		"Please equip jewelry permission guide and iron pickaxe beforehand\n",
+		"Ready to start", MB_OK|MB_TOPMOST);
 
 	int x, y;
 	GetPosition(x, y);
 	cout << "Position at (" << x << ", " << y << ")\n";
-	if (x != chest_side_x || y != chest_side_y)
+	if ((x != chest_side_x || y != chest_side_y) && (x != resource_side_x || y != resource_side_y))
 	{
-		MessageBoxA(0, ("Suggest initial location at Dorpat (" + to_string(chest_side_x) + ", " + to_string(chest_side_y) + ")").c_str(), "Warning", MB_OK|MB_TOPMOST);
-		
+		MessageBoxA(0, ("Suggest initial location at Dorpat (" 
+			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ") or "
+			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ")").c_str(), "Warning", MB_OK|MB_TOPMOST);
 	}
 	int s1, s2;
 	GetInventorySpace(s1, s2);
@@ -974,6 +1005,10 @@ void MineGoldAtReval()
 	backpath.push_back(make_pair(16,19));
 	backpath.push_back(make_pair(15,19));
 	backpath.push_back(make_pair(15,32));
+
+	int count = 0;
+	if (x == resource_side_x && y == resource_side_y)
+		goto START_ACCESS_RESOURCE;
 	while (true)
 	{
 		// try to access to the chest
@@ -1004,9 +1039,10 @@ void MineGoldAtReval()
 
 		cout << "Entering the Gate...";
 		WalkLeft();
-		Wait(LocationAt, (void*)(46 * 100 + 56), 2000);
+		Wait(LocationAt, (void*)(46 * 100 + 56), 5000);
 		cout << "Done\n";
 
+START_ACCESS_RESOURCE:
 		cout << "Mining...";
 		WalkLeft();	// access Gold
 		WaitMining();
@@ -1023,12 +1059,14 @@ void MineGoldAtReval()
 
 		cout << "Leaving the Gate...";
 		WalkRight();
-		Wait(LocationAt, (void*)(49 * 100 + 56), 2000);
+		Wait(LocationAt, (void*)(49 * 100 + 56), 8000);
 		cout << "Done\n";
 
 		cout << "WalkTo Chest...";
 		WalkTo(backpath);
 		cout << "Done\n";
+
+		cout << "Complete " << ++count << " times\n";
 	}
 }
 
