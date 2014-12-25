@@ -142,7 +142,7 @@ void WalkTo(int x, int y)
 		GetPosition(x_now, y_now);
 		if (x_now == x_last && y_now == y_last)
 		{
-			if (clock() - start > 8000)
+			if (clock() - start > 15000)
 			{
 				MessageBoxA(0, "Can not find a shortest path to the destination", "Warning", MB_OK|MB_TOPMOST);
 				return;
@@ -159,17 +159,30 @@ void WalkTo(int x, int y)
 			cout << "WalkTo (" << x_now << ", " << y_now << ")" << endl;
 		}
 		if (x > x_now)
-			WalkRight();
+		{
+			WalkRight(x - x_now);
+		}
 		if (x < x_now)
-			WalkLeft();
+		{
+			WalkLeft(x_now - x);
+		}
 		if (y > y_now)
-			WalkUp();
+		{
+			WalkUp(y - y_now);
+		}
 		if (y < y_now)
-			WalkDown();
+		{
+			WalkDown(y_now - y);
+		}
 		x_last = x_now;
 		y_last = y_now;
 	}
 	while (x_now != x || y_now != y);
+}
+void WalkTo(const vector<pair<int,int> >& locations)
+{
+	for (auto it = locations.begin(); it != locations.end(); it++)
+		WalkTo((*it).first, (*it).second);
 }
 void WalkToRelative(int dx, int dy /* Up: plus; Down: minus */, int additional_steps = 0)
 {
@@ -183,6 +196,14 @@ void WalkToRelative(int dx, int dy /* Up: plus; Down: minus */, int additional_s
 }
 
 typedef bool (*CriteriaFunc)(void*);
+bool LocationAt(void* loc)
+{
+	int x = ((int)loc) / 100;
+	int y = ((int)loc) % 100;
+	int x2, y2;
+	GetPosition(x2, y2);
+	return x == x2 && y == y2;
+}
 bool InventoryZero(void*)
 {
 	int s1, s2;
@@ -202,6 +223,15 @@ bool InventoryEqual(void* arg)
 	int s1, s2;
 	GetInventorySpace(s1, s2);
 	return s1 == num;
+}
+bool InventoryRange(void* arg)
+{
+	int num = (int)arg;
+	int r1 = num / 100;
+	int r2 = num % 100;
+	int s1, s2;
+	GetInventorySpace(s1, s2);
+	return r1 <= s1 && s1 <= r2;;
 }
 bool InventoryGreater(void* arg)
 {
@@ -247,8 +277,8 @@ bool Wait(CriteriaFunc func, void* arg = 0, int timeout = -1)
 }
 
 void LoadToPet(){ Key('E'); Sleep(16 * DELAY); }
-void UnloadFromPet(){ Key('T'); Wait(PetInventoryEqual, (void*)16, 1000); }
-void PutToChest(){ Key('Q'); Wait(InventoryEqual, (void*)37, 1000); }
+void UnloadFromPet(){ Key('T'); Wait(PetInventoryEqual, (void*)16, 4000); }
+void PutToChest(){ Key('Q'); Wait(InventoryRange, (void*)(36 * 100 + 37), 1000); }
 void GetFromChest(){ Key('G'); Wait(InventoryZero, NULL, 1000); }
 void OpenInventory(){ if (!InventoryShow(NULL)){ Key('B'); Wait(InventoryShow, NULL, 1000); } }
 void CloseInventory(){ if (InventoryShow(NULL)) { Key('B'); Wait(InventoryHide, NULL, 1000); } }
@@ -752,21 +782,23 @@ void CheckAntiBot()
 	}
 }
 
-void WaitCutting()
+void WaitActing(const string& act)
 {
 	cout << "Count Down...\n";
 	while (true)
 	{
-		Sleep(2 * ACTION_DELAY);	//might fail
-		CheckAntiBot();
 		int s1, s2;
 		GetInventorySpace(s1, s2);
 		cout << "\r" << s1 << "/" << s2 << "\t";
 		if (s1 == 0)
 			break;
+		Sleep(2 * ACTION_DELAY);	//might fail
+		CheckAntiBot();
 	}
-	cout << "...Complete Cutting\n";
+	cout << "...Complete " << act << endl;
 }
+void WaitCutting(){ WaitActing("cutting"); }
+void WaitMining(){ WaitActing("mining"); }
 
 void WaitCooking()
 {
@@ -806,7 +838,6 @@ void CutFirAtDorpatOutpost()
 	{
 		// try to access to chest and get raw food out
 		cout << "WalkTo Chest...";
-		WalkTo(83, 32);
 		WalkTo(83, 37);
 		cout << "Done\n";
 
@@ -904,6 +935,127 @@ void CookAtDorpat()
 	}
 }
 
+void MineGoldAtReval()
+{
+	const int chest_side_x = 15;
+	const int chest_side_y = 32;
+	
+	// preparation: 
+	// 1. equip jewelry permission guide and iron pickaxe
+	cout << "Try to Mine Gold automatically...\n";
+	cout << "Please equip jewelry permission guide and iron pickaxe beforehand\n";
+
+	int x, y;
+	GetPosition(x, y);
+	cout << "Position at (" << x << ", " << y << ")\n";
+	if (x != chest_side_x || y != chest_side_y)
+	{
+		MessageBoxA(0, ("Suggest initial location at Dorpat (" + to_string(chest_side_x) + ", " + to_string(chest_side_y) + ")").c_str(), "Warning", MB_OK|MB_TOPMOST);
+		
+	}
+	int s1, s2;
+	GetInventorySpace(s1, s2);
+	cout << "Inventory Space is " << s1 << " / " << s2 << "\n";
+
+	vector<pair<int,int> > path;
+	path.push_back(make_pair(15,19));
+	path.push_back(make_pair(16,19));
+	path.push_back(make_pair(16,15));
+	path.push_back(make_pair(29,15));
+	path.push_back(make_pair(29,49));
+	path.push_back(make_pair(49,49));
+	path.push_back(make_pair(49,56));
+
+	vector<pair<int,int> > backpath;
+	backpath.push_back(make_pair(49,49));
+	backpath.push_back(make_pair(29,49));
+	backpath.push_back(make_pair(29,15));
+	backpath.push_back(make_pair(16,15));
+	backpath.push_back(make_pair(16,19));
+	backpath.push_back(make_pair(15,19));
+	backpath.push_back(make_pair(15,32));
+	while (true)
+	{
+		// try to access to the chest
+		cout << "WalkTo Chest...";
+		WalkTo(chest_side_x, chest_side_y);
+		cout << "Done\n";
+
+		cout << "Open Chest...";
+		WalkLeft();	// open chest
+		cout << "Done\n";
+
+		cout << "PutToChest...";
+		PutToChest();
+		cout << "Done\n";
+
+		cout << "UnloadFromPet...";
+		UnloadFromPet();
+		cout << "Done\n";
+
+		cout << "PutToChest again...";
+		PutToChest();
+		cout << "Done\n";
+
+		cout << "WalkTo Jewelry Gate...";
+
+		WalkTo(path);
+		cout << "Done\n";
+
+		cout << "Entering the Gate...";
+		WalkLeft();
+		Wait(LocationAt, (void*)(46 * 100 + 56), 2000);
+		cout << "Done\n";
+
+		cout << "Mining...";
+		WalkLeft();	// access Gold
+		WaitMining();
+		cout << "Done\n";
+
+		cout << "LoadToPet...";
+		LoadToPet();
+		cout << "Done\n";
+
+		cout << "Mining again...";
+		WalkLeft();	// access Gold
+		WaitMining();
+		cout << "Done\n";
+
+		cout << "Leaving the Gate...";
+		WalkRight();
+		Wait(LocationAt, (void*)(49 * 100 + 56), 2000);
+		cout << "Done\n";
+
+		cout << "WalkTo Chest...";
+		WalkTo(backpath);
+		cout << "Done\n";
+	}
+}
+
+void MineIronAtDorpat()
+{
+	// stand at Dorpat (21, 17), ladder at (56, 14), Chest at (22, 17)
+	// preparation: 
+	// 1. equip the mining permission and iron pickaxe
+	cout << "Try to Mine Iron automatically...\n";
+	cout << "Please equip the mining permission guide and the iron pickaxe beforehand\n";
+	int x, y;
+	GetPosition(x, y);
+	cout << "Position at (" << x << ", " << y << ")\n";
+	if (x != 21 || y != 17)
+	{
+		MessageBoxA(0, "Suggest initial location at Dorpat (21, 17)", "Warning", MB_OK|MB_TOPMOST);
+	}
+	int s1, s2;
+	GetInventorySpace(s1, s2);
+	cout << "Inventory Space is " << s1 << " / " << s2 << "\n";
+
+	while (true)
+	{
+		vector<pair<int,int> > locations;
+	}	
+}
+
 int main()
 {
 	//find the target HWND
@@ -917,7 +1069,10 @@ int main()
 	if (g_hWnd == 0)
 		return 0;
 //	CookAtDorpat();	// must equip the raw food and select the raw food in the chest
-	CutFirAtDorpatOutpost();	// must equip axe
+//	CutFirAtDorpatOutpost();	// must equip axe
+//	MineIronAtDorpat();	// must equip iron pickaxe and mining permission guide
+	MineGoldAtReval();	// must equip iron pickaxe and jewelry permission guide
+	 
 
 	system("pause");
 	return 0;

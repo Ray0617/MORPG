@@ -3,5 +3,6 @@ MORPG/Release/*
 Debug/*
 Release/*
 *.sdf
+*.suo
 *.opensdf
 MORPG/debug.txt
