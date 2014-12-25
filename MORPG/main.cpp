@@ -62,6 +62,7 @@ typedef bool (*ColorCriteriaFunc)(COLORREF clr);
 bool Black(COLORREF clr);
 
 // function prototype
+void GetPosition(int& x, int& y);
 void GetInventorySpace(int& s1, int& s2);
 void Resize(vector<vector<bool> >& vec, int row, int col);
 void GetArray(vector<vector<bool> >& vec, HDC dc, int x, int y, int w, int h, ColorCriteriaFunc func);
@@ -127,7 +128,37 @@ void WalkDown(int step = 1){ Walk('S', step); }
 void WalkLeft(int step = 1){ Walk('A', step); }
 void WalkRight(int step = 1){ Walk('D', step); }
 void WalkUp(int step = 1){ Walk('W', step); }
-void WalkTo(int dx, int dy /* Up: plus; Down: minus */, int additional_steps = 0)
+void WalkTo(int x, int y)
+{
+	int x_now, y_now;
+	int x_last = x, y_last = y;
+	int fail = 0;
+	do
+	{
+		GetPosition(x_now, y_now);
+		if (x_now == x_last && y_now == y_last)
+		{
+			fail++;
+			if (fail > 3)
+			{
+				MessageBoxA(0, "Can not find a shortest path to the destination", "Warning", MB_OK|MB_TOPMOST);
+				return;
+			}
+		}
+		if (x > x_now)
+			WalkRight();
+		if (x < x_now)
+			WalkLeft();
+		if (y > y_now)
+			WalkUp();
+		if (y < y_now)
+			WalkDown();
+		x_last = x_now;
+		y_last = y_now;
+	}
+	while (x_now != x || y_now != y);
+}
+void WalkToRelative(int dx, int dy /* Up: plus; Down: minus */, int additional_steps = 0)
 {
 	UpdateWindowSize();
 	int grid_width = SAMPLE_GRID_WIDTH * g_nWidth / SAMPLE_WIDTH;
@@ -227,6 +258,7 @@ int GetDigit(const vector<vector<bool> >& digit)
 {
 	static bool init = false;
 	static vector<vector<bool> > num[10];
+	static vector<vector<bool> > numb[10];
 	if (!init)
 	{
 		for (int i = 0; i <= 9; i++)
@@ -246,6 +278,22 @@ int GetDigit(const vector<vector<bool> >& digit)
 				}
 			}
 			input.close();
+			ifstream inputb("digit\\" + to_string(i) + "b");
+			if (!inputb.is_open())
+				continue;
+			numb[i].resize(SAMPLE_NUMBER_H);
+			for (int row = 0; row < SAMPLE_NUMBER_H; row++)
+				numb[i][row].resize(SAMPLE_NUMBER_W);
+			for (int row = 0; row < SAMPLE_NUMBER_H; row++)
+			{
+				for (int col = 0; col < SAMPLE_NUMBER_W; col++)
+				{
+					char ch;
+					inputb >> ch;
+					numb[i][row][col] = (ch == '1');
+				}
+			}
+			inputb.close();
 		}
 		init = true;
 	}
@@ -258,6 +306,7 @@ int GetDigit(const vector<vector<bool> >& digit)
 	{
 		// compare num[n] with digit
 		int diff = 0;
+		int diffb = 0;
 		for (int row = 0; row < SAMPLE_NUMBER_H; row++)
 		{
 			for (int col = 0; col < SAMPLE_NUMBER_W; col++)
@@ -266,11 +315,22 @@ int GetDigit(const vector<vector<bool> >& digit)
 				bool dest = digit[row * digit_h / SAMPLE_NUMBER_H][col * digit_w / SAMPLE_NUMBER_W];
 				if (src != dest)
 					diff++;
+				if (!numb[n].empty())
+				{
+					bool srcb = numb[n][row][col];
+					if (srcb != dest)
+						diffb++;
+				}
 			}
 		}
 		if (diff < min_diff)
 		{
 			min_diff = diff;
+			maxarg_n = n;
+		}
+		if (!numb[n].empty() && diffb < min_diff)
+		{
+			min_diff = diffb;
 			maxarg_n = n;
 		}
 	}
@@ -436,10 +496,14 @@ void GetNumberPair(const vector<vector<bool> >& vec, int& n1, int& n2)
 		if (num_x[i] < 0)
 			break;
 		Copy(copy, num_x[i], num_y1, digit);
+		Debug(digit);
 		num[i] = GetDigit(digit);
 		if (num[i] == 1)
 			num_x[i] -= 2;	// the number 1 bitmap starts at x = 2
+		else if (num[i] == 8)
+			num_x[i] -= 1;	// the number 8 bitmap starts at x = 1
 		Clear(copy, num_x[i], num_y1, num_w, num_h);
+		Debug(copy);
 	}
 	if (num_x[3] > 0)
 	{
@@ -581,7 +645,6 @@ void GetPosition(int& x, int& y)
 	Resize(header, header_h, header_w);
 	GetArray(header, dc, header_x, 0, header_w, header_h, BrightWhite);
 	ReleaseDC(g_hWnd, dc);
-	Debug(header);
 
 	int top = GetTopMost(header);
 	int bottom = GetBottomMost(header);
@@ -612,7 +675,6 @@ void GetPosition(int& x, int& y)
 			break;
 		}
 	}
-	Debug(location);
 
 	// get rid of comma
 	int comma_x = -1;
@@ -628,7 +690,6 @@ void GetPosition(int& x, int& y)
 
 	bottom = GetBottomMost(location);
 
-	Debug(location);
 	GetNumberPair(location, x, y);
 }
 
@@ -672,7 +733,7 @@ void CutFir()
 {
 	// Dorpat
 	// from Chest (22, 18) to Fir (24, 27)
-	WalkTo(2, 9, 6);	// x: +3-3
+	WalkToRelative(2, 9, 6);	// x: +3-3
 	WaitInventoryFull();
 
 	LoadToPet();
@@ -680,7 +741,7 @@ void CutFir()
 	WaitInventoryFull();
 
 	// from Fir (24, 26) to Chest (22, 17)
-	WalkTo(-2, -9, 6);	// x: -3+3
+	WalkToRelative(-2, -9, 6);	// x: -3+3
 	PutToChest();
 	UnloadFromPet();
 	PutToChest();
@@ -694,6 +755,24 @@ void Cook()
 	//	1. chest item select one raw food (with lots of instances)
 	//	2. no open inventory
 	//	3. open chest
+	//	4. stand at (21, 17) is suggested
+	int x, y;
+	GetPosition(x, y);
+	cout << "Position at (" << x << ", " << y << ")\n";
+	if (x != 21 || y != 17)
+	{
+		MessageBoxA(0, "Suggest initial location at Dorpat (21, 17)", "Warning", MB_OK|MB_TOPMOST);
+	}
+	int s1, s2;
+	GetInventorySpace(s1, s2);
+	cout << "Inventory Space is " << s1 << " / " << s2 << "\n";
+	if (s1 >= 35)
+	{
+		// try to access to chest and get raw food out
+		WalkTo(21, 17);
+	}
+	return;
+	if (x == 22 && y == 1)
 	int s1, s2;
 	GetInventorySpace(s1, s2);
 	if (s1 >= 30)
@@ -731,19 +810,7 @@ int main()
 	EnumChildWindows(hWndParent, FindMORPGWindowHandle, 0);
 	if (g_hWnd == 0)
 		return 0;
-	int x, y;
-	GetPosition(x, y);
-	cout << x << "," << y << endl;
-	return 0;
-	cout << "1st round for cook\n";
 	Cook();
-	Sleep(1000);
-	cout << "2nd round for cook\n";
-	Cook();
-	return 0;
-	int s1, s2;
-	GetInventorySpace(s1, s2);
-	cout << s1 << ", " << s2 << endl;
 	system("pause");
 	return 0;
 }

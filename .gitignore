@@ -1,2 +1,7 @@
+MORPG/Debug/*
+MORPG/Release/*
 Debug/*
 Release/*
+*.sdf
+*.opensdf
+MORPG/debug.txt
