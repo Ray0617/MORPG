@@ -279,14 +279,14 @@ bool Wait(CriteriaFunc func, void* arg = 0, int timeout = -1)
 
 void LoadToPet(){ Key('E'); Sleep(16 * DELAY); }
 void UnloadFromPet(){ Key('T'); Wait(PetInventoryEqual, (void*)16, 4000); }
-void PutToChest(){ Key('Q'); Wait(InventoryRange, (void*)(36 * 100 + 37), 4000); }
+void PutToChest(){ Key('Q'); Wait(InventoryRange, (void*)(36 * 100 + 38), 4000); }
 void GetFromChest(){ Key('G'); Wait(InventoryZero, NULL, 4000); }
 void OpenInventory(){ if (!InventoryShow(NULL)){ Key('B'); Wait(InventoryShow, NULL, 1000); } }
 void CloseInventory(){ if (InventoryShow(NULL)) { Key('B'); Wait(InventoryHide, NULL, 1000); } }
 
 bool Valid(const vector<vector<bool> >& vec, int row, int col)
 {
-	return (row < (int)vec.size() && !vec.empty() && col < (int)vec[row].size());
+	return (row >= 0 && row < (int)vec.size() && !vec.empty() && col >= 0 && col < (int)vec[row].size());
 }
 
 void Debug(const vector<vector<bool> >& vec)
@@ -519,9 +519,7 @@ int GetBottomMost(const vector<vector<bool> >& test)
 }
 void Copy(const vector<vector<bool> >& src, int x, int y, vector<vector<bool> >& dst)
 {
-	assert(src.size() >= y + dst.size());
-	assert(src.size() > 0 && dst.size() > 0);
-	assert(src.front().size() >= x + dst.front().size());
+	assert(!dst.empty());
 	int h = dst.size();
 	int w = dst.front().size();
 	for (int i = 0; i < w; i++)
@@ -535,21 +533,24 @@ void Copy(const vector<vector<bool> >& src, int x, int y, vector<vector<bool> >&
 		}
 	}
 }
-void Clear(vector<vector<bool> >& test, int x, int y, int w, int h)
+void Clear(vector<vector<bool> >& vec, int x, int y, int w, int h)
 {
-	assert((int)test.size() >= y + h);
-	assert((int)test.size() > 0 && (int)test.front().size() >= x + w);
 	for (int i = 0; i < w; i++)
 	{
 		for (int j = 0; j < h; j++)
 		{
-			test[y+j][x+i] = 0;
+			int row = y+j;
+			int col = x+i;
+			if (Valid(vec, row, col)) 
+				vec[row][col] = 0;
 		}
 	}
 }
 
 void GetNumberPair(const vector<vector<bool> >& vec, int& n1, int& n2)
 {
+	n1 = n2 = -1;
+
 	vector<vector<bool> > copy = vec;
 	int num[4] = {0};
 	int num_x[4] = {0};
@@ -566,13 +567,11 @@ void GetNumberPair(const vector<vector<bool> >& vec, int& n1, int& n2)
 			break;
 		Copy(copy, num_x[i], num_y1, digit);
 		num[i] = GetDigit(digit);
-		//Debug(digit);
 		if (num[i] == 1)
 			num_x[i] -= 2;	// the number 1 bitmap starts at x = 2
 		else if (num[i] == 8)
 			num_x[i] -= 1;	// the number 8 bitmap starts at x = 1
 		Clear(copy, num_x[i], num_y1, num_w, num_h);
-		//Debug(copy);
 	}
 	if (num_x[3] > 0)
 	{
@@ -609,10 +608,18 @@ void GetInventorySpace(int& s1, int& s2)
 	int inventory_h = SAMPLE_INVENTORY_NUMBER_H * g_nHeight / SAMPLE_HEIGHT + 1;
 	vector<vector<bool> > inventory;
 	Resize(inventory, inventory_h, inventory_w);
+	bool pet = CheckPetIcon();
+	if (!pet)
+		inventory_x = (SAMPLE_INVENTORY_NUMBER_X + SAMPLE_RTICON_W + SAMPLE_RTICON_GAP) * g_nWidth / SAMPLE_WIDTH;
 	HDC dc = GetDC(g_hWnd);
 	GetArray(inventory, dc, inventory_x, inventory_y, inventory_w, inventory_h, Yellow);
 	ReleaseDC(g_hWnd, dc);
 	GetNumberPair(inventory, s1, s2);
+	if (!pet && s2 >= 0)
+	{
+		s1 = 10 * s1 + s2;
+		s2 = -1;
+	}
 }
 
 int Diff(const vector<vector<bool> >& src, vector<vector<bool> >& dst)
@@ -827,17 +834,25 @@ void WaitActing(const string& act)
 void WaitCutting(){ WaitActing("cutting"); }
 void WaitMining(){ WaitActing("mining"); }
 
-void WaitCooking()
+void WaitActing(const string& act, int count)
 {
 	cout << "Count Down...\n";
-	const int COUNT = 30;
+	const int COUNT = count;
 	for (int i = 0; i < COUNT; i++)
 	{
 		Sleep(ACTION_DELAY);
 		cout << "\r" << COUNT - i - 1 << "\t";
 		CheckAntiBot();
 	}
-	cout << "...Complete Cooking (Left some food not cooked intentionally so that no need to use mouse to equip)\n";
+	cout << "...Complete " << act << "(Left some stuff intentionally so that no need to use mouse to equip)\n";
+}
+void WaitCooking()
+{
+	WaitActing("cooking", 36);
+}
+void WaitSmelting()
+{
+	WaitActing("smelting", 18);
 }
 
 void WaitInventoryFull(){}
@@ -1094,6 +1109,59 @@ void MineIronAtDorpat()
 	}	
 }
 
+void SmeltGoldAtReval()
+{
+	const int chest_side_x = 14;
+	const int chest_side_y = 33;
+	const int resource_side_x = 17;
+	const int resource_side_y = 33;
+	// preparation: 
+	// 1. select the gold chunk in the chest and equip the gold chunk
+	// 2. equip pet only so that the number of gold chunk is odd and do not need to equip manually
+	MessageBoxA(0, "Try to Mine Gold automatically...\n"
+		"Please select the gold chunk in the chest and equip the gold chunk beforehand\n"
+		"Moreover, please keep ODD space for gold chunk to prevent from equipping manually",
+		"Ready to start", MB_OK|MB_TOPMOST);
+	int x, y;
+	GetPosition(x, y);
+	cout << "Position at (" << x << ", " << y << ")\n";
+	if ((x != chest_side_x || y != chest_side_y) && (x != resource_side_x || y != resource_side_y))
+	{
+		MessageBoxA(0, ("Suggest initial location at Dorpat (" 
+			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ") or "
+			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ")").c_str(), "Warning", MB_OK|MB_TOPMOST);
+	}
+	int s1, s2;
+	GetInventorySpace(s1, s2);
+	cout << "Inventory Space is " << s1 << " / " << s2 << "\n";
+	while (true)
+	{
+		cout << "WalkTo Chest...";
+		WalkTo(chest_side_x, chest_side_y);
+		cout << "Done\n";
+
+		cout << "Open Chest...";
+		WalkDown();	// open chest
+		cout << "Done\n";
+
+		cout << "PutToChest...";
+		PutToChest();
+		cout << "Done\n";
+
+		cout << "GetFromChest...";
+		GetFromChest();
+		cout << "Done\n";
+
+		cout << "WalkTo Furnace...";
+		WalkTo(resource_side_x, resource_side_y);
+		cout << "Done\n";
+
+		cout << "Smelting...";
+		WalkUp();	// access Furnace
+		WaitSmelting();
+		cout << "Done\n";
+	}
+}
 int main()
 {
 	//find the target HWND
@@ -1106,10 +1174,12 @@ int main()
 	EnumChildWindows(hWndParent, FindMORPGWindowHandle, 0);
 	if (g_hWnd == 0)
 		return 0;
+
 //	CookAtDorpat();	// must equip the raw food and select the raw food in the chest
 //	CutFirAtDorpatOutpost();	// must equip axe
 //	MineIronAtDorpat();	// must equip iron pickaxe and mining permission guide
 	MineGoldAtReval();	// must equip iron pickaxe and jewelry permission guide
+//	SmeltGoldAtReval();	// must select gold chunk in the chest and equip gold chunk 
 	 
 
 	system("pause");
