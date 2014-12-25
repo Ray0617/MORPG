@@ -14,6 +14,8 @@
 #include <endpointvolume.h>
 using namespace std;
 
+const bool DEBUG = true;
+
 const int DELAY = 50;
 const int WAIT_DELAY = 200;
 const int WALK_DELAY = 250;
@@ -145,6 +147,11 @@ void WalkTo(int x, int y)
 				return;
 			}
 		}
+		else
+		{
+			fail = 0;
+			cout << "WalkTo (" << x_now << ", " << y_now << ")" << endl;
+		}
 		if (x > x_now)
 			WalkRight();
 		if (x < x_now)
@@ -211,7 +218,10 @@ bool Wait(CriteriaFunc func, void* arg = 0, int timeout = -1)
 		if (func(arg))
 			return true;
 		if (timeout > 0 && clock() - start > timeout)
+		{
+			MessageBoxA(0, "Wait timeout!", "Warning", MB_OK|MB_TOPMOST);
 			return false;
+		}
 		Sleep(WAIT_DELAY);
 	}
 }
@@ -496,14 +506,12 @@ void GetNumberPair(const vector<vector<bool> >& vec, int& n1, int& n2)
 		if (num_x[i] < 0)
 			break;
 		Copy(copy, num_x[i], num_y1, digit);
-		Debug(digit);
 		num[i] = GetDigit(digit);
 		if (num[i] == 1)
 			num_x[i] -= 2;	// the number 1 bitmap starts at x = 2
 		else if (num[i] == 8)
 			num_x[i] -= 1;	// the number 8 bitmap starts at x = 1
 		Clear(copy, num_x[i], num_y1, num_w, num_h);
-		Debug(copy);
 	}
 	if (num_x[3] > 0)
 	{
@@ -717,15 +725,19 @@ bool CheckAntiBot()
 
 void WaitCooking()
 {
-	for (int i = 0; i < 38; i++)
+	cout << "Count Down...\n";
+	const int COUNT = 30;
+	for (int i = 0; i < COUNT; i++)
 	{
 		Sleep(ACTION_DELAY);
+		cout << "\r" << COUNT - i << "\t";
 		if (CheckAntiBot())
 		{
 			MessageBoxA(0, "Antibot Dialog Detect!", "Warning", MB_OK|MB_TOPMOST);
 			Sleep(ACTION_DELAY);
 		}
 	}
+	cout << "...Complete Cooking (Left some food not cooked intentionally so that no need to use mouse to equip)\n";
 }
 
 void WaitInventoryFull(){}
@@ -750,12 +762,12 @@ void CutFir()
 void Cook()
 {
 	// stand at Dorpat (21, 17), campfir at (17, 18), Chest at (22, 18)
-	// i.e. campfire at (-4, 1), chest at (4, 1)
 	// preparation: 
-	//	1. chest item select one raw food (with lots of instances)
-	//	2. no open inventory
-	//	3. open chest
-	//	4. stand at (21, 17) is suggested
+	// 1. chest item select one raw food (with lots of instances)
+	// 2. equip the raw food 
+	cout << "Try to Cook automatically...\n";
+	cout << "Please select the raw food material in the chest and in the inventory beforehand\n";
+
 	int x, y;
 	GetPosition(x, y);
 	cout << "Position at (" << x << ", " << y << ")\n";
@@ -766,36 +778,39 @@ void Cook()
 	int s1, s2;
 	GetInventorySpace(s1, s2);
 	cout << "Inventory Space is " << s1 << " / " << s2 << "\n";
-	if (s1 >= 35)
+
+	while (true)
 	{
 		// try to access to chest and get raw food out
+		cout << "WalkTo Chest...";
 		WalkTo(21, 17);
-	}
-	return;
-	if (x == 22 && y == 1)
-	int s1, s2;
-	GetInventorySpace(s1, s2);
-	if (s1 >= 30)
-	{
+		cout << "Done\n";
+
+		cout << "Open Chest...";
+		WalkRight();	// open chest
+		cout << "Done\n";
+		
+		cout << "PutToChest...";
+		PutToChest();
+		cout << "Done\n";
+
 		cout << "GetFormChest...";
 		GetFromChest();
 		cout << "Done\n";
+
+		//cout << "SelectInventory(The Raw Food Materials)...";
+		//SelectInventory(0, 2);
+		//cout << "Done\n";
+
+		cout << "WalkTo Campfire...";
+		WalkTo(18, 18);
+		cout << "Done\n";
+
+		cout << "Cooking...";
+		WalkLeft();	// access campfire
+		WaitCooking();
+		cout << "Done\n";
 	}
-	cout << "SelectInventory...";
-	SelectInventory(0, 2);
-	cout << "Done\n";
-	cout << "WalkTo Campfire...";
-	WalkTo(-4, 1);
-	cout << "Done\n";
-	cout << "Wait cooking...";
-	WaitCooking();
-	cout << "Done\n";
-	cout << "WalkTo Chest...";
-	WalkTo(4, 1);
-	cout << "Done\n";
-	cout << "PutToChest...";
-	PutToChest();
-	cout << "Done\n";
 }
 
 int main()
