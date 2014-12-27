@@ -15,11 +15,13 @@
 using namespace std;
 
 const bool DEBUG = true;
+bool g_2XPCheck = true;
+bool g_No2XPCheck = false;
 
 const int DELAY = 50;
 const int WAIT_DELAY = 200;
 const int WALK_DELAY = 200;
-const int ACTION_DELAY = 2100;
+const int ACTION_DELAY = 2200;
 
 // client DC: (0, 23) - (1600, 922) (1600, 983(partial black))
 const int SAMPLE_WIDTH = 1600;
@@ -58,12 +60,21 @@ const int SAMPLE_NUMBER_W = 8;
 const int SAMPLE_NUMBER_H = 11;
 const int SAMPLE_HEAD = 25;
 const int SAMPLE_TAIL = 25;
+const int SAMPLE_SELLALL_X = 837;
+const int SAMPLE_SELLALL_Y = 591-23;
+const int SAMPLE_2X_X = 1383;
+const int SAMPLE_2X_Y = 71 - 23;
+const int SAMPLE_2X_R = 255;
+const int SAMPLE_2X_G = 165;
+const int SAMPLE_2X_B = 0;
+
 
 // typedef
 typedef bool (*ColorCriteriaFunc)(COLORREF clr);
 bool Black(COLORREF clr);
 
 // function prototype
+bool Check2XP();
 bool CheckAntiBot();
 void GetArray(vector<vector<bool> >& vec, HDC dc, int x, int y, int w, int h, ColorCriteriaFunc func);
 void GetInventorySpace(int& s1, int& s2);
@@ -138,6 +149,7 @@ void WalkTo(int x, int y)
 	clock_t start = clock();
 	do
 	{
+		Check2XP();
 		CheckAntiBot();
 		GetPosition(x_now, y_now);
 		if (x_now == x_last && y_now == y_last)
@@ -277,12 +289,23 @@ bool Wait(CriteriaFunc func, void* arg = 0, int timeout = -1)
 	}
 }
 
-void LoadToPet(){ Key('E'); Sleep(16 * DELAY); }
+void LoadToPet(){ Key('E'); Wait(PetInventoryEqual, (void*)0, 4000); }
 void UnloadFromPet(){ Key('T'); Wait(PetInventoryEqual, (void*)16, 4000); }
 void PutToChest(){ Key('Q'); Wait(InventoryRange, (void*)(36 * 100 + 38), 4000); }
 void GetFromChest(){ Key('G'); Wait(InventoryZero, NULL, 4000); }
 void OpenInventory(){ if (!InventoryShow(NULL)){ Key('B'); Wait(InventoryShow, NULL, 1000); } }
 void CloseInventory(){ if (InventoryShow(NULL)) { Key('B'); Wait(InventoryHide, NULL, 1000); } }
+
+// mouse (note: would active the game window)
+void SellAll()
+{
+	UpdateWindowSize();
+	int sellall_x = SAMPLE_SELLALL_X * g_nWidth / SAMPLE_WIDTH;
+	int sellall_y = SAMPLE_SELLALL_Y * g_nHeight / SAMPLE_HEIGHT;
+	Click(sellall_x, sellall_y);
+	//Wait(InventoryRange, (void*)(36 * 100 + 39), 4000);
+}
+
 
 bool Valid(const vector<vector<bool> >& vec, int row, int col)
 {
@@ -800,7 +823,35 @@ bool CheckAntiBot()
 	return false;
 }
 
-void WaitActing(const string& act)
+bool DoubleXP()
+{
+	UpdateWindowSize();
+	int doublexp_x1 = SAMPLE_2X_X * g_nWidth / SAMPLE_WIDTH;
+	int doublexp_x2 = (SAMPLE_2X_X - SAMPLE_RTICON_GAP - SAMPLE_RTICON_W) * g_nWidth / SAMPLE_WIDTH;
+	int doublexp_y = SAMPLE_2X_Y * g_nHeight / SAMPLE_HEIGHT;
+	HDC dc = GetDC(g_hWnd);
+	COLORREF clr1 = GetPixel(dc, doublexp_x1, doublexp_y);
+	COLORREF clr2 = GetPixel(dc, doublexp_x2, doublexp_y);
+	ReleaseDC(g_hWnd, dc);
+ 	COLORREF clr = RGB(SAMPLE_2X_R, SAMPLE_2X_G, SAMPLE_2X_B);
+	return (clr == clr1 || clr == clr2);
+}
+bool Check2XP()
+{
+	if (g_2XPCheck && DoubleXP())
+	{
+		MessageBoxA(0, "Double XP Detect!", "Cheering", MB_OK|MB_TOPMOST);
+		return true;
+	}
+	if (g_No2XPCheck && !DoubleXP())
+	{
+		MessageBoxA(0, "No Double XP Detect!", "Cheering", MB_OK|MB_TOPMOST);
+		return true;
+	}
+	return false;
+}
+
+void WaitActing(const string& act, bool consuming = false)
 {
 	cout << "Count Down...\n";
 	int s1_last = -1, s2_last = -1;
@@ -810,13 +861,17 @@ void WaitActing(const string& act)
 		int s1, s2;
 		GetInventorySpace(s1, s2);
 		cout << "\r" << s1 << "/" << s2 << "\t";
-		if (s1 == 0)
-			break;
 		Sleep(2 * ACTION_DELAY);	//might fail
+		if (!consuming && s1 == 0)
+			break;
+
+		Check2XP();
 		if (CheckAntiBot())
 			s1_last--;
 		if (s1_last == s1)
 		{
+			if (consuming && clock() - start > 5000)
+				break;
 			if (clock() - start > 30000)
 			{
 				MessageBoxA(0, "Get nothing for 30 secs", "Warning", MB_OK|MB_TOPMOST);
@@ -842,6 +897,7 @@ void WaitActing(const string& act, int count)
 	{
 		Sleep(ACTION_DELAY);
 		cout << "\r" << COUNT - i - 1 << "\t";
+		Check2XP();
 		CheckAntiBot();
 	}
 	cout << "...Complete " << act << "(Left some stuff intentionally so that no need to use mouse to equip)\n";
@@ -852,7 +908,7 @@ void WaitCooking()
 }
 void WaitSmelting()
 {
-	WaitActing("smelting", 18);
+	WaitActing("smelting", true);
 }
 
 void WaitInventoryFull(){}
@@ -1087,6 +1143,8 @@ START_ACCESS_RESOURCE:
 
 void MineIronAtDorpat()
 {
+	// todo
+	assert(false);
 	// stand at Dorpat (21, 17), ladder at (56, 14), Chest at (22, 17)
 	// preparation: 
 	// 1. equip the mining permission and iron pickaxe
@@ -1108,29 +1166,83 @@ void MineIronAtDorpat()
 		vector<pair<int,int> > locations;
 	}	
 }
-
-void SmeltGoldAtReval()
+void SmeltGoldAtNarwa()
 {
-	const int chest_side_x = 14;
-	const int chest_side_y = 33;
-	const int resource_side_x = 17;
-	const int resource_side_y = 33;
+	const int chest_side_x = 65;
+	const int chest_side_y = 40;
+	const int resource_side_x = 71;
+	const int resource_side_y = 40;
 	// preparation: 
 	// 1. select the gold chunk in the chest and equip the gold chunk
-	// 2. equip pet only so that the number of gold chunk is odd and do not need to equip manually
-	MessageBoxA(0, "Try to Mine Gold automatically...\n"
+	// 2. equip boots only so that the number of gold chunk is odd and do not need to equip manually
+	string message = "Try to Smelting gold automatically...\n"
 		"Please select the gold chunk in the chest and equip the gold chunk beforehand\n"
-		"Moreover, please keep ODD space for gold chunk to prevent from equipping manually",
-		"Ready to start", MB_OK|MB_TOPMOST);
+		"Moreover, please keep ODD space for gold chunk to prevent from equipping manually\n";
+		
 	int x, y;
 	GetPosition(x, y);
 	cout << "Position at (" << x << ", " << y << ")\n";
 	if ((x != chest_side_x || y != chest_side_y) && (x != resource_side_x || y != resource_side_y))
 	{
-		MessageBoxA(0, ("Suggest initial location at Dorpat (" 
+		message += "Suggest initial location at Reval (" 
 			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ") or "
-			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ")").c_str(), "Warning", MB_OK|MB_TOPMOST);
+			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ")";
 	}
+	MessageBoxA(0, message.c_str(), "Warning", MB_OK|MB_TOPMOST);
+	int s1, s2;
+	GetInventorySpace(s1, s2);
+	cout << "Inventory Space is " << s1 << " / " << s2 << "\n";
+	while (true)
+	{
+		cout << "WalkTo Chest...";
+		WalkTo(chest_side_x, chest_side_y);
+		cout << "Done\n";
+
+		cout << "Open Chest...";
+		WalkLeft();	// open chest
+		cout << "Done\n";
+
+		cout << "PutToChest...";
+		PutToChest();
+		cout << "Done\n";
+
+		cout << "GetFromChest...";
+		GetFromChest();
+		cout << "Done\n";
+
+		cout << "WalkTo Furnace...";
+		WalkTo(resource_side_x, resource_side_y);
+		cout << "Done\n";
+
+		cout << "Smelting...";
+		WalkUp();	// access Furnace
+		WaitSmelting();
+		cout << "Done\n";
+	}
+}
+void SmeltGoldAtDorpat()
+{
+	const int chest_side_x = 22;
+	const int chest_side_y = 18;
+	const int resource_side_x = 22;
+	const int resource_side_y = 22;
+	// preparation: 
+	// 1. select the gold chunk in the chest and equip the gold chunk
+	// 2. equip boots only so that the number of gold chunk is odd and do not need to equip manually
+	string message = "Try to Smelting gold automatically...\n"
+		"Please select the gold chunk in the chest and equip the gold chunk beforehand\n"
+		"Moreover, please keep ODD space for gold chunk to prevent from equipping manually\n";
+		
+	int x, y;
+	GetPosition(x, y);
+	cout << "Position at (" << x << ", " << y << ")\n";
+	if ((x != chest_side_x || y != chest_side_y) && (x != resource_side_x || y != resource_side_y))
+	{
+		message += "Suggest initial location at Reval (" 
+			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ") or "
+			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ")";
+	}
+	MessageBoxA(0, message.c_str(), "Warning", MB_OK|MB_TOPMOST);
 	int s1, s2;
 	GetInventorySpace(s1, s2);
 	cout << "Inventory Space is " << s1 << " / " << s2 << "\n";
@@ -1162,6 +1274,137 @@ void SmeltGoldAtReval()
 		cout << "Done\n";
 	}
 }
+void SmeltGoldAtReval()
+{
+	const int chest_side_x = 14;
+	const int chest_side_y = 33;
+	const int resource_side_x = 17;
+	const int resource_side_y = 33;
+	// preparation: 
+	// 1. select the gold chunk in the chest and equip the gold chunk
+	// 2. equip boots only so that the number of gold chunk is odd and do not need to equip manually
+	string message = "Try to Smelting gold automatically...\n"
+		"Please select the gold chunk in the chest and equip the gold chunk beforehand\n"
+		"Moreover, please keep ODD space for gold chunk to prevent from equipping manually\n";
+		
+	int x, y;
+	GetPosition(x, y);
+	cout << "Position at (" << x << ", " << y << ")\n";
+	if ((x != chest_side_x || y != chest_side_y) && (x != resource_side_x || y != resource_side_y))
+	{
+		message += "Suggest initial location at Reval (" 
+			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ") or "
+			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ")";
+	}
+	MessageBoxA(0, message.c_str(), "Warning", MB_OK|MB_TOPMOST);
+	int s1, s2;
+	GetInventorySpace(s1, s2);
+	cout << "Inventory Space is " << s1 << " / " << s2 << "\n";
+	while (true)
+	{
+		cout << "WalkTo Chest...";
+		WalkTo(chest_side_x, chest_side_y);
+		cout << "Done\n";
+
+		cout << "Open Chest...";
+		WalkDown();	// open chest
+		cout << "Done\n";
+
+		cout << "PutToChest...";
+		PutToChest();
+		cout << "Done\n";
+
+		cout << "GetFromChest...";
+		GetFromChest();
+		cout << "Done\n";
+
+		cout << "WalkTo Furnace...";
+		WalkTo(resource_side_x, resource_side_y);
+		cout << "Done\n";
+
+		cout << "Smelting...";
+		WalkUp();	// access Furnace
+		WaitSmelting();
+		cout << "Done\n";
+	}
+}
+
+void SellGoldAtReval()
+{
+	const int chest_side_x = 15;
+	const int chest_side_y = 32;
+	const int resource_side_x = 17;
+	const int resource_side_y = 24;
+	// preparation: 
+	// 1. select the gold bar in the chest
+	// 2. select the gold bar in th merchant
+	string message = "Try to Sell gold bar automatically...\n"
+		"Please select the gold bar in the chest and select the gold bar in the merchant beforehand\n";
+		
+	int x, y;
+	GetPosition(x, y);
+	cout << "Position at (" << x << ", " << y << ")\n";
+	if ((x != chest_side_x || y != chest_side_y) && (x != resource_side_x || y != resource_side_y))
+	{
+		message += "Suggest initial location at Reval (" 
+			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ") or "
+			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ")";
+	}
+	MessageBoxA(0, message.c_str(), "Warning", MB_OK|MB_TOPMOST);
+	int s1, s2; 
+	GetInventorySpace(s1, s2);
+	cout << "Inventory Space is " << s1 << " / " << s2 << "\n";
+	if (s1 == 0 && s2 == 0)
+		goto SELLALL;
+	while (true)
+	{
+		cout << "WalkTo Chest...";
+		WalkTo(chest_side_x, chest_side_y);
+		cout << "Done\n";
+
+		cout << "Open Chest...";
+		WalkLeft();	// open chest
+		cout << "Done\n";
+
+		cout << "GetFromChest...";
+		GetFromChest();
+		cout << "Done\n";
+
+		/*
+		cout << "LoadToPet...";
+		LoadToPet();
+		cout << "Done\n";
+
+		cout << "GetFromChest again...";
+		GetFromChest();
+		cout << "Done\n";
+		*/
+
+		cout << "WalkTo Jeweler...";
+		WalkTo(15, 24);
+		WalkTo(resource_side_x, resource_side_y);
+		cout << "Done\n";
+
+SELLALL:
+		cout << "Selling...";
+		WalkRight();	// access shop
+		Sleep(2000);
+		SellAll();
+		Sleep(2000);
+		cout << "Done\n";
+
+		/*
+		cout << "UnloadFromPet...";
+		UnloadFromPet();
+		cout << "Done\n";
+
+		cout << "Selling again...";
+		SellAll();
+		cout << "Done\n";
+		*/
+	}
+}
+
 int main()
 {
 	//find the target HWND
@@ -1178,10 +1421,12 @@ int main()
 //	CookAtDorpat();	// must equip the raw food and select the raw food in the chest
 //	CutFirAtDorpatOutpost();	// must equip axe
 //	MineIronAtDorpat();	// must equip iron pickaxe and mining permission guide
-	MineGoldAtReval();	// must equip iron pickaxe and jewelry permission guide
-//	SmeltGoldAtReval();	// must select gold chunk in the chest and equip gold chunk 
-	 
-
+//	MineGoldAtReval();	// must equip iron pickaxe and jewelry permission guide
+	g_2XPCheck = false; g_No2XPCheck = true;
+	SmeltGoldAtReval();	// must select gold chunk in the chest and equip gold chunk 
+	SmeltGoldAtNarwa();	// must select gold chunk in the chest and equip gold chunk 
+	SmeltGoldAtDorpat();	// must select gold chunk in the chest and equip gold chunk 
+//	SellGoldAtReval();	// must select gold bar in the chest; gold bar in the merchant
 	system("pause");
 	return 0;
 }
