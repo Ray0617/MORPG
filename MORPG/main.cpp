@@ -149,7 +149,6 @@ void WalkTo(int x, int y)
 	clock_t start = clock();
 	do
 	{
-		Check2XP();
 		CheckAntiBot();
 		GetPosition(x_now, y_now);
 		if (x_now == x_last && y_now == y_last)
@@ -865,7 +864,6 @@ void WaitActing(const string& act, bool consuming = false)
 		if (!consuming && s1 == 0)
 			break;
 
-		Check2XP();
 		if (CheckAntiBot())
 			s1_last--;
 		if (s1_last == s1)
@@ -897,7 +895,6 @@ void WaitActing(const string& act, int count)
 	{
 		Sleep(ACTION_DELAY);
 		cout << "\r" << COUNT - i - 1 << "\t";
-		Check2XP();
 		CheckAntiBot();
 	}
 	cout << "...Complete " << act << "(Left some stuff intentionally so that no need to use mouse to equip)\n";
@@ -1035,6 +1032,7 @@ void CookAtDorpat()
 
 void MineGoldAtReval()
 {
+	const string location = "Reval";
 	const int chest_side_x = 15;
 	const int chest_side_y = 32;
 	const int resource_side_x = 46;
@@ -1051,9 +1049,10 @@ void MineGoldAtReval()
 	cout << "Position at (" << x << ", " << y << ")\n";
 	if ((x != chest_side_x || y != chest_side_y) && (x != resource_side_x || y != resource_side_y))
 	{
-		MessageBoxA(0, ("Suggest initial location at Dorpat (" 
-			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ") or "
-			+ to_string(chest_side_x) + ", " + to_string(chest_side_y) + ")").c_str(), "Warning", MB_OK|MB_TOPMOST);
+		MessageBoxA(0, ("Suggest initial location at " + location 
+			+ " (" + to_string(chest_side_x) + ", " + to_string(chest_side_y) + ")"
+			+ " or (" + to_string(resource_side_x) + ", " + to_string(resource_side_y) + ")").c_str(), 
+			"Warning", MB_OK|MB_TOPMOST);
 	}
 	int s1, s2;
 	GetInventorySpace(s1, s2);
@@ -1077,10 +1076,11 @@ void MineGoldAtReval()
 	backpath.push_back(make_pair(15,19));
 	backpath.push_back(make_pair(15,32));
 
+	bool stop = false;
 	int count = 0;
 	if (x == resource_side_x && y == resource_side_y)
 		goto START_ACCESS_RESOURCE;
-	while (true)
+	while (!g_2XPCheck || !DoubleXP())
 	{
 		// try to access to the chest
 		cout << "WalkTo Chest...";
@@ -1300,7 +1300,7 @@ void SmeltGoldAtReval()
 	int s1, s2;
 	GetInventorySpace(s1, s2);
 	cout << "Inventory Space is " << s1 << " / " << s2 << "\n";
-	while (true)
+	while (!g_No2XPCheck || DoubleXP())
 	{
 		cout << "WalkTo Chest...";
 		WalkTo(chest_side_x, chest_side_y);
@@ -1405,6 +1405,18 @@ SELLALL:
 	}
 }
 
+int Cin_i()
+{
+	while (true)
+	{
+		int i;
+		cin >> i;
+		if (cin.good())
+			return i;
+		cin.clear();
+	}
+}
+
 int main()
 {
 	//find the target HWND
@@ -1418,12 +1430,48 @@ int main()
 	if (g_hWnd == 0)
 		return 0;
 
+	//cout << "Select location: (1) Dorpat  (2) Reval  ";	// should be detected automatically
+	cout << "Location: Reval\n";
+
+	bool doubleXPCheck = true;
+	while (true)
+	{
+		cout << "2X EXP Checking: " << (doubleXPCheck?"Enabled":"Disabled") << endl;
+		cout << "Select function: (1) Mine Gold  (2) Smelting Gold  (3) Toggle 2XP Checking  ";
+		int sel = Cin_i();
+		switch (sel)
+		{
+		case 1:
+		case 2:
+			while (true)
+			{
+				if (sel == 1)
+				{
+					g_2XPCheck = doubleXPCheck; g_No2XPCheck = false;
+					MineGoldAtReval();	// must equip iron pickaxe and jewelry permission guide
+					sel = 2;
+				}
+				if (sel == 2)
+				{
+					g_2XPCheck = false; g_No2XPCheck = doubleXPCheck;
+					SmeltGoldAtReval();	// must select gold chunk in the chest and equip gold chunk 
+					sel = 1;
+				}
+			}
+			break;
+		case 3:
+			doubleXPCheck = !doubleXPCheck;
+			break;
+		default:
+			cout << "Unknown Command...\n";
+			break;
+		}
+	}
 //	CookAtDorpat();	// must equip the raw food and select the raw food in the chest
 //	CutFirAtDorpatOutpost();	// must equip axe
 //	MineIronAtDorpat();	// must equip iron pickaxe and mining permission guide
-//	MineGoldAtReval();	// must equip iron pickaxe and jewelry permission guide
+	g_2XPCheck = false; g_No2XPCheck = false;
 	g_2XPCheck = false; g_No2XPCheck = true;
-	SmeltGoldAtReval();	// must select gold chunk in the chest and equip gold chunk 
 	SmeltGoldAtNarwa();	// must select gold chunk in the chest and equip gold chunk 
 	SmeltGoldAtDorpat();	// must select gold chunk in the chest and equip gold chunk 
 //	SellGoldAtReval();	// must select gold bar in the chest; gold bar in the merchant
